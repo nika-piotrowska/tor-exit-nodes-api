@@ -57,6 +57,30 @@ make lint-fix
 
 The linter configuration lives in `.golangci.yml`.
 
+## Releases
+
+This repository uses semantic versioning and Git tags for releases.
+
+To create a new release:
+
+```bash
+./scripts/bump-version.sh X.Y.Z --push
+```
+
+This command will:
+
+- update the `VERSION` file
+- prepend a new entry to `CHANGELOG.md`
+- create a commit `release: vX.Y.Z`
+- create an annotated Git tag (`vX.Y.Z`)
+- push the commit and tag to GitHub
+
+Example:
+
+```bash
+./scripts/bump-version.sh 0.2.0 --push
+```
+
 ## Configuration (planned)
 - TOR_EXIT_ADDRESSES_URL – URL to Tor exit addresses list
 - REDIS_URL – Redis address (default: redis://localhost:6380/0)
