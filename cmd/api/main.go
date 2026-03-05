@@ -1,3 +1,5 @@
+// Package main starts the HTTP server for the tor-exit-nodes-api service.
+// The service exposes endpoints used to determine whether an IP address belongs to a Tor exit node.
 package main
 
 import (
@@ -14,7 +16,7 @@ import (
 func buildHandler() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/up", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/up", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
