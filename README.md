@@ -20,7 +20,42 @@ docker run -d --name tor-redis -p 6380:6379 redis:7
 ```
 
 ### Run the server
-(coming soon)
+```bash
+make run
+```
+
+## Linters (golangci-lint)
+
+This repository uses `golangci-lint` to keep code quality consistent.
+
+### Step-by-step setup
+
+1. Install golangci-lint:
+```bash
+make lint-install
+```
+
+2. Verify it is installed:
+```bash
+golangci-lint version
+```
+
+3. Run linters:
+```bash
+make lint
+```
+
+4. Run linters with automatic fixes where possible:
+```bash
+make lint-fix
+```
+
+### Useful commands
+- `make lint` → run all configured linters
+- `make lint-fix` → apply auto-fixes and re-run checks
+- `golangci-lint run ./...` → direct linter invocation
+
+The linter configuration lives in `.golangci.yml`.
 
 ## Configuration (planned)
 - TOR_EXIT_ADDRESSES_URL – URL to Tor exit addresses list
