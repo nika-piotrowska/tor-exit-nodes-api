@@ -13,71 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	redis "github.com/redis/go-redis/v9"
+	"github.com/joho/godotenv"
+
+	httpapi "github.com/nika-piotrowska/tor-exit-nodes-api/internal/httpapi"
+	"github.com/nika-piotrowska/tor-exit-nodes-api/internal/redisclient"
 )
-
-const serviceID = "service"
-
-type pinger interface {
-	Ping(ctx context.Context) error
-}
-
-type goRedisPinger struct {
-	client *redis.Client
-}
-
-func (p goRedisPinger) Ping(ctx context.Context) error {
-	return p.client.Ping(ctx).Err()
-}
-
-func buildHandler(redisPinger pinger) http.Handler {
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/healthz", healthHandler)
-	mux.HandleFunc("/readyz", readinessHandler(redisPinger))
-
-	return mux
-}
-
-func healthHandler(w http.ResponseWriter, _ *http.Request) {
-	writeJSONAPISuccess(
-		w,
-		http.StatusOK,
-		"health",
-		serviceID,
-		map[string]any{
-			"status": "ok",
-		},
-	)
-}
-
-func readinessHandler(redisPinger pinger) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if redisPinger == nil {
-			writeJSONAPIError(w, http.StatusServiceUnavailable, "Service Unavailable", "Redis client not configured")
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(r.Context(), 500*time.Millisecond)
-		defer cancel()
-
-		if err := redisPinger.Ping(ctx); err != nil {
-			writeJSONAPIError(w, http.StatusServiceUnavailable, "Service Unavailable", "Redis is unavailable")
-			return
-		}
-
-		writeJSONAPISuccess(
-			w,
-			http.StatusOK,
-			"readiness",
-			serviceID,
-			map[string]any{
-				"status": "ready",
-				"redis":  "ok",
-			},
-		)
-	}
-}
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -91,19 +31,28 @@ func main() {
 }
 
 func run(ctx context.Context) error {
-	rdb, err := newRedisClient(redisURLFromEnv())
+	if err := loadEnv(); err != nil {
+		return err
+	}
+
+	redisURL, err := redisclient.URLFromEnv()
+	if err != nil {
+		return fmt.Errorf("failed to read redis configuration: %w", err)
+	}
+
+	rdb, err := redisclient.New(redisURL)
 	if err != nil {
 		return fmt.Errorf("failed to create redis client: %w", err)
 	}
 	defer func() {
-		if err := rdb.Close(); err != nil {
-			log.Printf("failed to close redis client: %v", err)
+		if closeErr := rdb.Close(); closeErr != nil {
+			log.Printf("failed to close redis client: %v", closeErr)
 		}
 	}()
 
 	srv := &http.Server{
 		Addr:              ":3000",
-		Handler:           buildHandler(goRedisPinger{client: rdb}),
+		Handler:           httpapi.NewHandler(redisclient.Pinger{Client: rdb}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,
@@ -128,26 +77,15 @@ func run(ctx context.Context) error {
 		defer cancel()
 
 		return srv.Shutdown(shutdownCtx)
-
 	case err := <-serverErr:
 		return err
 	}
 }
 
-func redisURLFromEnv() string {
-	raw := os.Getenv("REDIS_URL")
-	if raw == "" {
-		return "redis://localhost:6380/0"
+func loadEnv() error {
+	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to load .env: %w", err)
 	}
 
-	return raw
-}
-
-func newRedisClient(raw string) (*redis.Client, error) {
-	opts, err := redis.ParseURL(raw)
-	if err != nil {
-		return nil, err
-	}
-
-	return redis.NewClient(opts), nil
+	return nil
 }

@@ -1,4 +1,4 @@
-package main
+package httpapi
 
 import (
 	"encoding/json"
@@ -6,7 +6,10 @@ import (
 	"strconv"
 )
 
-const jsonAPIContentType = "application/vnd.api+json"
+const (
+	jsonAPIContentType = "application/vnd.api+json"
+	serviceID          = "service"
+)
 
 type jsonAPIData struct {
 	Type       string         `json:"type"`

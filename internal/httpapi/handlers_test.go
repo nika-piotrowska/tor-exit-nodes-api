@@ -1,4 +1,4 @@
-package main
+package httpapi
 
 import (
 	"context"
@@ -18,7 +18,7 @@ func (f fakePinger) Ping(_ context.Context) error {
 }
 
 func TestHealthz_JSONAPI(t *testing.T) {
-	handler := buildHandler(nil) // /healthz doesn't need redis
+	handler := NewHandler(nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -52,7 +52,7 @@ func TestHealthz_JSONAPI(t *testing.T) {
 }
 
 func TestReadyz_WhenRedisOK_Returns200_JSONAPI(t *testing.T) {
-	handler := buildHandler(fakePinger{err: nil})
+	handler := NewHandler(fakePinger{err: nil})
 
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
@@ -75,19 +75,22 @@ func TestReadyz_WhenRedisOK_Returns200_JSONAPI(t *testing.T) {
 	if payload.Data.Type != "readiness" {
 		t.Fatalf("expected data.type %q, got %q", "readiness", payload.Data.Type)
 	}
+
 	if payload.Data.ID != serviceID {
 		t.Fatalf("expected data.id %q, got %q", serviceID, payload.Data.ID)
 	}
+
 	if payload.Data.Attributes["status"] != "ready" {
 		t.Fatalf("expected status %q, got %#v", "ready", payload.Data.Attributes["status"])
 	}
+
 	if payload.Data.Attributes["redis"] != "ok" {
 		t.Fatalf("expected redis %q, got %#v", "ok", payload.Data.Attributes["redis"])
 	}
 }
 
 func TestReadyz_WhenRedisDown_Returns503_JSONAPIErrors(t *testing.T) {
-	handler := buildHandler(fakePinger{err: errors.New("down")})
+	handler := NewHandler(fakePinger{err: errors.New("down")})
 
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
@@ -114,16 +117,18 @@ func TestReadyz_WhenRedisDown_Returns503_JSONAPIErrors(t *testing.T) {
 	if payload.Errors[0].Status != "503" {
 		t.Fatalf("expected errors[0].status %q, got %q", "503", payload.Errors[0].Status)
 	}
+
 	if payload.Errors[0].Title != "Service Unavailable" {
 		t.Fatalf("expected errors[0].title %q, got %q", "Service Unavailable", payload.Errors[0].Title)
 	}
+
 	if payload.Errors[0].Detail != "Redis is unavailable" {
 		t.Fatalf("expected errors[0].detail %q, got %q", "Redis is unavailable", payload.Errors[0].Detail)
 	}
 }
 
 func TestReadyz_WhenRedisNotConfigured_Returns503_JSONAPIErrors(t *testing.T) {
-	handler := buildHandler(nil)
+	handler := NewHandler(nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
