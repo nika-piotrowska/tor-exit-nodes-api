@@ -4,76 +4,23 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
-	"syscall"
 	"time"
 
 	redis "github.com/redis/go-redis/v9"
 )
 
-const (
-	jsonAPIContentType = "application/vnd.api+json"
-	serviceID          = "service"
-)
+const serviceID = "service"
 
-type jsonAPIData struct {
-	Type       string         `json:"type"`
-	ID         string         `json:"id"`
-	Attributes map[string]any `json:"attributes,omitempty"`
-}
-
-type jsonAPISuccess struct {
-	Data jsonAPIData `json:"data"`
-}
-
-type jsonAPIError struct {
-	Status string `json:"status"`
-	Title  string `json:"title"`
-	Detail string `json:"detail,omitempty"`
-}
-
-type jsonAPIErrors struct {
-	Errors []jsonAPIError `json:"errors"`
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", jsonAPIContentType)
-	w.WriteHeader(status)
-
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-
-	if err := enc.Encode(v); err != nil {
-		log.Printf("failed to encode json response: %v", err)
-	}
-}
-
-func writeJSONAPIError(w http.ResponseWriter, status int, title, detail string) {
-	writeJSON(w, status, jsonAPIErrors{
-		Errors: []jsonAPIError{
-			{
-				Status: strconv.Itoa(status),
-				Title:  title,
-				Detail: detail,
-			},
-		},
-	})
-}
-
-// pinger represents a dependency we can health-check (e.g. Redis).
-// Using an interface keeps handlers easy to test.
 type pinger interface {
 	Ping(ctx context.Context) error
 }
 
-// goRedisPinger adapts redis.Client to our pinger interface.
 type goRedisPinger struct {
 	client *redis.Client
 }
@@ -92,15 +39,15 @@ func buildHandler(redisPinger pinger) http.Handler {
 }
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, jsonAPISuccess{
-		Data: jsonAPIData{
-			Type: "health",
-			ID:   serviceID,
-			Attributes: map[string]any{
-				"status": "ok",
-			},
+	writeJSONAPISuccess(
+		w,
+		http.StatusOK,
+		"health",
+		serviceID,
+		map[string]any{
+			"status": "ok",
 		},
-	})
+	)
 }
 
 func readinessHandler(redisPinger pinger) http.HandlerFunc {
@@ -118,29 +65,28 @@ func readinessHandler(redisPinger pinger) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, jsonAPISuccess{
-			Data: jsonAPIData{
-				Type: "readiness",
-				ID:   serviceID,
-				Attributes: map[string]any{
-					"status": "ready",
-					"redis":  "ok",
-				},
+		writeJSONAPISuccess(
+			w,
+			http.StatusOK,
+			"readiness",
+			serviceID,
+			map[string]any{
+				"status": "ready",
+				"redis":  "ok",
 			},
-		})
+		)
 	}
 }
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	err := run(ctx)
+	stop()
 
-	if err := run(ctx); err != nil {
+	if err != nil {
 		log.Printf("fatal: %v", err)
-		stop()
 		os.Exit(1)
 	}
-
-	stop()
 }
 
 func run(ctx context.Context) error {
@@ -148,11 +94,7 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create redis client: %w", err)
 	}
-	defer func() {
-		if closeErr := rdb.Close(); closeErr != nil {
-			log.Printf("failed to close redis client: %v", closeErr)
-		}
-	}()
+	defer rdb.Close()
 
 	srv := &http.Server{
 		Addr:              ":3000",
@@ -177,16 +119,11 @@ func run(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
-		log.Println("shutdown signal received")
-
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			return fmt.Errorf("graceful shutdown failed: %w", err)
-		}
+		return srv.Shutdown(shutdownCtx)
 
-		return <-serverErr
 	case err := <-serverErr:
 		return err
 	}
