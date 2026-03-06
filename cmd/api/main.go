@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	redis "github.com/redis/go-redis/v9"
@@ -79,7 +80,7 @@ func readinessHandler(redisPinger pinger) http.HandlerFunc {
 }
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	err := run(ctx)
 	stop()
 
@@ -94,7 +95,11 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create redis client: %w", err)
 	}
-	defer rdb.Close()
+	defer func() {
+		if err := rdb.Close(); err != nil {
+			log.Printf("failed to close redis client: %v", err)
+		}
+	}()
 
 	srv := &http.Server{
 		Addr:              ":3000",
