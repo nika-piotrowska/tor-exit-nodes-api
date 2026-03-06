@@ -1,3 +1,4 @@
+// Package httpapi provides HTTP handlers for health and readiness endpoints.
 package httpapi
 
 import (
@@ -6,10 +7,12 @@ import (
 	"time"
 )
 
+// Pinger represents a dependency that can verify connectivity, for example to Redis.
 type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
+// NewHandler builds an HTTP handler with health and readiness endpoints.
 func NewHandler(redisPinger Pinger) http.Handler {
 	mux := http.NewServeMux()
 

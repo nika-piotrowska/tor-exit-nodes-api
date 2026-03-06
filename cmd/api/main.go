@@ -1,5 +1,4 @@
 // Package main starts the HTTP server for the tor-exit-nodes-api service.
-// The service exposes endpoints used to determine whether an IP address belongs to a Tor exit node.
 package main
 
 import (
