@@ -14,7 +14,8 @@ import (
 
 	"github.com/joho/godotenv"
 
-	httpapi "github.com/nika-piotrowska/tor-exit-nodes-api/internal/httpapi"
+	api "github.com/nika-piotrowska/tor-exit-nodes-api/internal/api"
+	"github.com/nika-piotrowska/tor-exit-nodes-api/internal/generated/oas"
 	"github.com/nika-piotrowska/tor-exit-nodes-api/internal/redisclient"
 )
 
@@ -49,9 +50,18 @@ func run(ctx context.Context) error {
 		}
 	}()
 
+	ogenHandler := &api.Handler{
+		RedisPinger: redisclient.Pinger{Client: rdb},
+	}
+
+	httpHandler, err := oas.NewServer(ogenHandler)
+	if err != nil {
+		return fmt.Errorf("failed to create ogen server: %w", err)
+	}
+
 	srv := &http.Server{
 		Addr:              ":3000",
-		Handler:           httpapi.NewHandler(redisclient.Pinger{Client: rdb}),
+		Handler:           httpHandler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,
