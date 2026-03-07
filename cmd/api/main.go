@@ -1,61 +1,100 @@
 // Package main starts the HTTP server for the tor-exit-nodes-api service.
-// The service exposes endpoints used to determine whether an IP address belongs to a Tor exit node.
 package main
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/joho/godotenv"
+
+	api "github.com/nika-piotrowska/tor-exit-nodes-api/internal/api"
+	"github.com/nika-piotrowska/tor-exit-nodes-api/internal/generated/oas"
+	"github.com/nika-piotrowska/tor-exit-nodes-api/internal/redisclient"
 )
 
-func buildHandler() http.Handler {
-	mux := http.NewServeMux()
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	err := run(ctx)
+	stop()
 
-	mux.HandleFunc("/up", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-
-	return mux
+	if err != nil {
+		log.Printf("fatal: %v", err)
+		os.Exit(1)
+	}
 }
 
-func main() {
-	addr := ":3000"
-	handler := buildHandler()
+func run(ctx context.Context) error {
+	if err := loadEnv(); err != nil {
+		return err
+	}
+
+	redisURL, err := redisclient.URLFromEnv()
+	if err != nil {
+		return fmt.Errorf("failed to read redis configuration: %w", err)
+	}
+
+	rdb, err := redisclient.New(redisURL)
+	if err != nil {
+		return fmt.Errorf("failed to create redis client: %w", err)
+	}
+	defer func() {
+		if closeErr := rdb.Close(); closeErr != nil {
+			log.Printf("failed to close redis client: %v", closeErr)
+		}
+	}()
+
+	ogenHandler := &api.Handler{
+		RedisPinger: redisclient.Pinger{Client: rdb},
+	}
+
+	httpHandler, err := oas.NewServer(ogenHandler)
+	if err != nil {
+		return fmt.Errorf("failed to create ogen server: %w", err)
+	}
 
 	srv := &http.Server{
-		Addr:              addr,
-		Handler:           handler,
+		Addr:              ":3000",
+		Handler:           httpHandler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	serverErr := make(chan error, 1)
 
 	go func() {
-		<-stop
-		log.Println("shutdown signal received")
-
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		if err := srv.Shutdown(ctx); err != nil {
-			log.Printf("graceful shutdown failed: %v", err)
+		log.Printf("server listening on %s", srv.Addr)
+		err := srv.ListenAndServe()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+			return
 		}
+		serverErr <- nil
 	}()
 
-	log.Printf("server listening on %s", addr)
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatal(err)
+		return srv.Shutdown(shutdownCtx)
+	case err := <-serverErr:
+		return err
 	}
+}
+
+func loadEnv() error {
+	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to load .env: %w", err)
+	}
+
+	return nil
 }

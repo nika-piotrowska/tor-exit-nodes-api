@@ -1,0 +1,131 @@
+openapi: 3.0.3
+info:
+  title: Tor Exit Nodes API
+  version: 0.1.0
+
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      summary: Health check
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthDocument"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+  /readyz:
+    get:
+      operationId: getReadyz
+      summary: Readiness check
+      responses:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessDocument"
+        "503":
+          description: Service is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDocument"
+        default:
+          $ref: "#/components/responses/ErrorResponse"
+
+components:
+  responses:
+    ErrorResponse:
+      description: General error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorDocument"
+
+  schemas:
+    HealthDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/HealthResource"
+
+    HealthResource:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+          example: health
+        id:
+          type: string
+          example: service
+        attributes:
+          $ref: "#/components/schemas/HealthAttributes"
+
+    HealthAttributes:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+
+    ReadinessDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ReadinessResource"
+
+    ReadinessResource:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+          example: readiness
+        id:
+          type: string
+          example: service
+        attributes:
+          $ref: "#/components/schemas/ReadinessAttributes"
+
+    ReadinessAttributes:
+      type: object
+      required: [status, redis]
+      properties:
+        status:
+          type: string
+          example: ready
+        redis:
+          type: string
+          example: ok
+
+    ErrorDocument:
+      type: object
+      required: [errors]
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ErrorObject"
+
+    ErrorObject:
+      type: object
+      required: [status, title]
+      properties:
+        status:
+          type: string
+          example: "503"
+        title:
+          type: string
+          example: Service Unavailable
+        detail:
+          type: string
+          example: Redis is unavailable
